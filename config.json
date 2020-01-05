@@ -1,0 +1,18 @@
+{
+    "ROOT_DIR": "/scratch/myuan7/program/rlattack/",
+    "DATA_DIR": "/scratch/myuan7/corpus/LA/",
+
+    "FFT_LEN": 1024,
+    "HOP_LEN": 256,
+    "MEL_DIM": 80,
+    "MFCC_DIM": 20,
+    "SR": 16000,
+    "FIXED_SEC": 0.5,
+    "VAD_AGG": 2,
+    "PREEMPH": 0.97,
+
+    "UTTS_IN_USE":1000,
+    "FRAMES_PER_UTT":32,
+    "N_CPNTS": 512,
+    "MAX_ITER":10
+}
