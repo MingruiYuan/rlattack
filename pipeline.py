@@ -22,14 +22,16 @@ def get_reward_resnet(cfg, audio, asvmodel):
     _, reward = asvmodel(mfcc).max(dim=1)
     return reward.item()
 
-def get_reward_lfcc(cfg, ctime, audio, meng):
-    # meng = matlab.engine.start_matlab()
+def get_reward_lfcc(cfg, ctime, audio, meng, mode='train'):
     if not os.path.exists(cfg['AUDIO_SAVE_DIR']):
         os.system('mkdir -p '+ cfg['AUDIO_SAVE_DIR'])
     filename = cfg['AUDIO_SAVE_DIR'] + 'temp_audio_{}.wav'.format(ctime)
     sf.write(filename, audio, cfg['SR'])
     reward = meng.get_reward(cfg['TOOLKIT_DIR'], filename)
-    # meng.quit()
+    if mode == 'eval':
+    	print('Reward ', reward)
+    	reward = reward > cfg['THRESHOLD']
+    	
     return reward
 
 def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
@@ -72,7 +74,7 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
             action_noise.scale = (cfg['INIT_EXPSCALE'] - cfg['FINAL_EXPSCALE'])*max(0, cfg['EXPLORATION_END'] - episode)/cfg['EXPLORATION_END'] + cfg['FINAL_EXPSCALE']
             action_noise.reset()
 
-        print('Episode ', episode+1, mfcc_list[episode % len(mfcc_list)])
+        print('Episode ', episode+1, filename)
 
         while iteration < cfg['ITER_PER_UTT']:
             action = agent.select_action(state, action_noise)
@@ -90,8 +92,8 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
             # sf.write(cfg['AUDIO_SAVE_DIR'], audio, cfg['SR'])
             # reward = meng.get_reward(cfg['TOOLKIT_DIR'], cfg['AUDIO_SAVE_DIR'])            
             episode_reward += reward
-            mask = torch.Tensor([not reward])
-            print(iteration+1, reward)
+            mask = torch.Tensor([not (reward>cfg['THRESHOLD'])])
+            print('Reward ', iteration+1, reward)
 
             memory.push(state.squeeze(), action, mask, next_state, torch.Tensor([reward]))
 
@@ -116,7 +118,7 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
                 print('Update {}: Value loss {}, Policy loss {}'.format(str(update), str(value_loss), str(policy_loss)))
         
         rewards.append(episode_reward)
-        print('Episode reward: {}, with {} iterations.'.format(str(episode_reward), str(iteration+1) if episode_reward else 'N/A'))
+        print('Episode reward: {}, with {} iterations.'.format(str(episode_reward), str(iteration+1) if iteration<cfg['ITER_PER_UTT'] else 'N/A'))
         if episode > 19:
             print('Average episode reward: ', np.mean(rewards[-20:]))     
 
@@ -146,7 +148,7 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
                     
                     # reward = get_reward_resnet(cfg, audio, asvmodel)
                     reward = get_reward_lfcc(cfg, ctime, audio, meng)
-                    print(iteration+1, reward)
+                    print('Reward ', iteration+1, reward)
                     # sf.write(cfg['AUDIO_SAVE_DIR'], audio, cfg['SR'])
                     # reward = meng.get_reward(cfg['TOOLKIT_DIR'], cfg['AUDIO_SAVE_DIR'])
                     episode_reward += reward
@@ -163,10 +165,68 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
 
                 val_number += 1
                 average_val_reward += episode_reward
-                print('{}/{}. Episode reward: {}, with {} iterations.'.format(str(val_number), str(cfg['VAL_BS']), str(episode_reward), str(iteration+1) if episode_reward else 'N/A'))
+                print('{}/{}. Episode reward: {}, with {} iterations.'.format(str(val_number), str(cfg['VAL_BS']), str(episode_reward), str(iteration+1) if iteration<cfg['ITER_PER_UTT'] else 'N/A'))
 
             print('Average validation reward at episode {}: {}.'.format(str(episode+1), str(average_val_reward/cfg['VAL_BS'])))
                     
         episode += 1
 
     meng.quit()
+
+def evaluate(cfg, load_actor_path=None, load_critic_path=None):
+	print(torch.cuda.is_available())
+	feat_dir = cfg['DATA_DIR']+'features/logmel_attack/eval/'
+    phase_dir = cfg['DATA_DIR']+'features/phase_attack/eval/'
+    mfcc_extractor_attack(cfg, 'eval')
+    feat_list = os.listdir(feat_dir)
+    random.shuffle(feat_list)
+
+    agent = DDPG(cfg)
+    rewards = []
+    count = 0
+
+    agent.load_model(load_actor_path, load_critic_path)
+    meng = matlab.engine.start_matlab()
+
+    while count < cfg['EVAL_NUM']:
+    	filename = feat_list[count][:-4]
+    	state = np.expand_dims(np.load(feat_dir+feat_list[count]))
+    	state = torch.from_numpy(state).to(device)
+    	phase = np.load(phase_dir+feat_list[count])
+    	episode_reward = 0
+    	iteration = 0
+
+    	print('Evaluation ', count+1, filename)
+
+    	while iteration < cfg['EVAL_ITER_PER_UTT']:
+    		print(iteration+1, '/', cfg['EVAL_ITER_PER_UTT'])
+            action = agent.select_action(state, action_noise)
+            next_state = torch.add(state.squeeze(), action)
+
+            ## Evaluate perturbed features ##
+            if torch.cuda.is_available():    
+                audio = mfcc_to_audio(cfg, next_state.cpu().numpy(), phase)
+            else:
+                audio = mfcc_to_audio(cfg, next_state.numpy(), phase)
+
+            reward = get_reward_lfcc(cfg, ctime, audio, meng, 'eval')            
+            episode_reward += reward
+
+            if reward:
+                if not os.path.exists(cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime)):
+                    os.system('mkdir -p '+cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime))
+                evading_audio_path = cfg['ROOT_DIR']+'evading_audio/{}/{}_{}.wav'.format(ctime, filename, 'ptb')
+                sf.write(evading_audio_path, audio, cfg['SR'])
+                print('Succeed!!')
+                break
+
+            state = torch.unsqueeze(next_state, dim=0)
+            iteration += 1
+
+        rewards.append(episode_reward)
+        print('Episode reward: {}, with {} iterations.'.format(str(episode_reward), str(iteration+1) if episode_reward else 'N/A'))
+
+        count += 1
+
+    meng.quit()
+    print('Successful rate: {}/{}.'.format(sum(rewards), cfg['EVAL_NUM']))
