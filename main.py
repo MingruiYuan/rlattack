@@ -29,4 +29,8 @@ if __name__ == '__main__':
 
     if args.step == 'train_attack':
         from pipeline import train as attack_train
-        attack_train(cfg, ctime)
+        attack_train(cfg, args.current_time)
+
+    if args.step == 'eval_attack':
+        from pipeline import evaluate as attack_eval
+        attack_eval(cfg, args.current_time, cfg['LOAD_ACTOR_PATH'], cfg['LOAD_CRITIC_PATH'])

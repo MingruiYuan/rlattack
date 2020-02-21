@@ -29,9 +29,9 @@ def get_reward_lfcc(cfg, ctime, audio, meng, mode='train'):
     sf.write(filename, audio, cfg['SR'])
     reward = meng.get_reward(cfg['TOOLKIT_DIR'], filename)
     if mode == 'eval':
-    	print('Reward ', reward)
-    	reward = reward > cfg['THRESHOLD']
-    	
+        print('Reward ', reward)
+        reward = reward > cfg['THRESHOLD']
+        
     return reward
 
 def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
@@ -173,9 +173,9 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
 
     meng.quit()
 
-def evaluate(cfg, load_actor_path=None, load_critic_path=None):
-	print(torch.cuda.is_available())
-	feat_dir = cfg['DATA_DIR']+'features/logmel_attack/eval/'
+def evaluate(cfg, ctime, load_actor_path=None, load_critic_path=None):
+    print(torch.cuda.is_available())
+    feat_dir = cfg['DATA_DIR']+'features/logmel_attack/eval/'
     phase_dir = cfg['DATA_DIR']+'features/phase_attack/eval/'
     mfcc_extractor_attack(cfg, 'eval')
     feat_list = os.listdir(feat_dir)
@@ -189,18 +189,18 @@ def evaluate(cfg, load_actor_path=None, load_critic_path=None):
     meng = matlab.engine.start_matlab()
 
     while count < cfg['EVAL_NUM']:
-    	filename = feat_list[count][:-4]
-    	state = np.expand_dims(np.load(feat_dir+feat_list[count]))
-    	state = torch.from_numpy(state).to(device)
-    	phase = np.load(phase_dir+feat_list[count])
-    	episode_reward = 0
-    	iteration = 0
+        filename = feat_list[count][:-4]
+        state = np.expand_dims(np.load(feat_dir+feat_list[count]), axis=0)
+        state = torch.from_numpy(state).to(device)
+        phase = np.load(phase_dir+feat_list[count])
+        episode_reward = 0
+        iteration = 0
 
-    	print('Evaluation ', count+1, filename)
+        print('Evaluation ', count+1, filename)
 
-    	while iteration < cfg['EVAL_ITER_PER_UTT']:
-    		print(iteration+1, '/', cfg['EVAL_ITER_PER_UTT'])
-            action = agent.select_action(state, action_noise)
+        while iteration < cfg['EVAL_ITER_PER_UTT']:
+            print(iteration+1, '/', cfg['EVAL_ITER_PER_UTT'])
+            action = agent.select_action(state)
             next_state = torch.add(state.squeeze(), action)
 
             ## Evaluate perturbed features ##

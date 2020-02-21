@@ -34,12 +34,14 @@
     "MEM_SIZE": 100000,
     "MAX_EPISODE": 100000,
     "ITER_PER_UTT": 20,
-    "VAL_ITER_PER_UTT": 50,
+    "EVAL_ITER_PER_UTT": 50,
     "ATK_BS": 128,
     "VAL_BS": 16,
     "EVAL_NUM": 500,
     "CR_HIDDEN_DIM": 128,
     "AC_HIDDEN_DIM": 128,
     "LINLAYER_DIM": 8,
-    "THRESHOLD": 0.748917
+    "THRESHOLD": 0.748917,
+    "LOAD_ACTOR_PATH": "/scratch/myuan7/program/rlattack/saved_models/attack/20-02-20_12-09-35/actor_upd3001.pt",
+    "LOAD_CRITIC_PATH": "/scratch/myuan7/program/rlattack/saved_models/attack/20-02-20_12-09-35/critic_upd3001.pt"
 }
