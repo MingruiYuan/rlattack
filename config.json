@@ -1,7 +1,6 @@
 {
     "ROOT_DIR": "/scratch/myuan7/program/rlattack/",
     "DATA_DIR": "/scratch/myuan7/corpus/LA/",
-    "AUDIO_SAVE_DIR": "/scratch/myuan7/program/rlattack/temp_audio/",
     "TOOLKIT_DIR": "/scratch/myuan7/program/ASVspoof_2019_baseline_CM_v1/",
     "STATS_DIR": "/scratch/myuan7/corpus/LA/features/mfcc_attack_train_stats.npy",
 
@@ -20,7 +19,7 @@
     "N_CPNTS": 512,
     "MAX_ITER": 10,
     "ASV_BS": 32,
-    "ASV_MAXEPOCH": 100,
+    "ASV_MAXEPOCH": 300,
     "ASV_LR": 0.0001,
 
     "GAMMA": 0.99,
@@ -36,12 +35,16 @@
     "ITER_PER_UTT": 20,
     "EVAL_ITER_PER_UTT": 50,
     "ATK_BS": 128,
+    "SAVE_INTERVAL": 1000,
+    "VAL_INTERVAL": 100,
     "VAL_BS": 16,
-    "EVAL_NUM": 500,
+    "EVAL_NUM": 300,
     "CR_HIDDEN_DIM": 128,
     "AC_HIDDEN_DIM": 128,
     "LINLAYER_DIM": 8,
     "THRESHOLD": 0.748917,
-    "LOAD_ACTOR_PATH": "/scratch/myuan7/program/rlattack/saved_models/attack/20-02-20_12-09-35/actor_upd3001.pt",
-    "LOAD_CRITIC_PATH": "/scratch/myuan7/program/rlattack/saved_models/attack/20-02-20_12-09-35/critic_upd3001.pt"
+    "DL_THRESHOLD": -7.6,
+    "LOAD_ACTOR_PATH": "/scratch/myuan7/program/rlattack/saved_models/attack/20-02-23_23-14-39/actor_upd18001.pt",
+    "LOAD_CRITIC_PATH": "/scratch/myuan7/program/rlattack/saved_models/attack/20-02-23_23-14-39/critic_upd18001.pt",
+    "LOAD_ASVRESNET_PATH": "/scratch/myuan7/program/rlattack/saved_models/antispoof_resnet/20-02-26_10-26-10/resnet_mfcc_epoch_271.pth"
 }

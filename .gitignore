@@ -1,5 +1,6 @@
 evading_audio/
 saved_models/
+fig/
 pipeline2.py
 *.log
 *.wav

@@ -7,17 +7,6 @@ import soundfile as sf
 from scipy import signal
 from data.vad import ASVvad
 
-class AttackSet(Dataset):
-
-    def __init__(self, cfg, mode):
-        self.cfg = cfg
-
-    def __len__(self):
-        pass
-
-    def __getitem__(self, idx):
-        pass
-
 class AntispoofingSet(Dataset):
 
     def __init__(self, cfg, mode):

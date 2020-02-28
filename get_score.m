@@ -1,4 +1,4 @@
-function score = get_reward(toolkit_dir, filepath)
+function score = get_score(toolkit_dir, filepath)
 
 clc;
 % add required libraries to the path

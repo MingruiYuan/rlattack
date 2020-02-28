@@ -12,29 +12,46 @@ from replay_memory import ReplayMemory, Transition
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def get_reward_resnet(cfg, audio, asvmodel):
+def remove_inf(audio):  
+    inf_pos = np.where(np.isfinite(audio)==False)[0]
+    for p in inf_pos:
+        if p == 0:
+            audio[p] = audio[1]
+        elif p == len(audio)-1:
+            audio[p] = audio[-2]
+        else:
+            audio[p] = (audio[p+1] + audio[p-1])/2
+    return audio
+
+def get_score_resnet(cfg, audio, asvmodel, mode='train'):
     audio = librosa.util.normalize(pad(audio, cfg['MAX_PADLEN']))
     mfcc = librosa.feature.mfcc(audio, sr=cfg['SR'], n_mfcc=cfg['MFCC_DIM'])
     delta = librosa.feature.delta(mfcc)
     delta2 = librosa.feature.delta(delta)
     mfcc = np.expand_dims(np.concatenate((mfcc, delta, delta2), axis=0), axis=0)
     mfcc = torch.from_numpy(mfcc).to(device)
-    _, reward = asvmodel(mfcc).max(dim=1)
-    return reward.item()
-
-def get_reward_lfcc(cfg, ctime, audio, meng, mode='train'):
-    if not os.path.exists(cfg['AUDIO_SAVE_DIR']):
-        os.system('mkdir -p '+ cfg['AUDIO_SAVE_DIR'])
-    filename = cfg['AUDIO_SAVE_DIR'] + 'temp_audio_{}.wav'.format(ctime)
-    sf.write(filename, audio, cfg['SR'])
-    reward = meng.get_reward(cfg['TOOLKIT_DIR'], filename)
+    with torch.no_grad():
+        output = asvmodel(mfcc)
+    score = output[0][1].item() - output[0][0].item()
     if mode == 'eval':
-        print('Reward ', reward)
-        reward = reward > cfg['THRESHOLD']
-        
-    return reward
+        print('Score', score)
+        reward = score > cfg['DL_THRESHOLD']
+        return reward
+    else:
+        return score
 
-def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
+def get_score_lfcc(cfg, ctime, audio, meng, mode='train'):
+    filename = cfg['ROOT_DIR'] + 'temp_audio/temp_audio_{}.wav'.format(ctime)
+    sf.write(filename, audio, cfg['SR'])
+    score = meng.get_score(cfg['TOOLKIT_DIR'], filename)
+    if mode == 'eval':
+        print('Score', score)
+        reward = score > cfg['THRESHOLD']
+        return reward
+    else:
+        return score
+        
+def train(cfg, ctime, oracle='GMM', load_actor_path=None, load_critic_path=None, load_asvmodel_path=None):
     print(torch.cuda.is_available())
     mfcc_dir = cfg['DATA_DIR']+'features/logmel_attack/train/'
     phase_dir = cfg['DATA_DIR']+'features/phase_attack/train/'
@@ -45,28 +62,39 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
     mfcc_extractor_attack(cfg, 'dev')
     val_mfcc_list = os.listdir(val_mfcc_dir)
 
-    ## anti-spoofing model ##
-    # asvmodel = MFCCModel()
-    # asvmodel_ckpt = torch.load(cfg['ROOT_DIR']+'antispoofing.pth')
-    # asvmodel.load_state_dict(asvmodel_ckpt['model_state_dict'])
-    # asvmodel.to(device)
-    # asvmodel.eval()
+    if not os.path.exists(cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime)):
+        os.system('mkdir -p '+cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime))
+    if not os.path.exists(cfg['ROOT_DIR']+'figures/'):
+        os.system('mkdir -p '+cfg['ROOT_DIR']+'figures/')
+    if not os.path.exists(cfg['ROOT_DIR']+'temp_audio/'):
+        os.system('mkdir -p '+cfg['ROOT_DIR']+'temp_audio/')
 
     agent = DDPG(cfg)
-    action_noise = ActionNoise(cfg['MFCC_DIM'], cfg['FRAMES_PER_UTT']) if cfg['ACTION_NOISE'] else None
+    agent.load_model(load_actor_path, load_critic_path)
+    action_noise = ActionNoise(cfg['MEL_DIM'], cfg['FRAMES_PER_UTT']) if cfg['ACTION_NOISE'] else None
     memory = ReplayMemory(cfg['MEM_SIZE'])
     rewards = []
+    per_action_rewards = []
+    val_per_action_rewards = []
     episode = 0
+    count_file = 0
     update = 0
-
-    agent.load_model(load_actor_path, load_critic_path)
-    meng = matlab.engine.start_matlab()
+    interval_success = 0
+    
+    if oracle == 'GMM':
+        meng = matlab.engine.start_matlab()
+    if oracle == 'ResNet':
+        asvmodel = MFCCModel()
+        asvmodel_ckpt = torch.load(load_asvmodel_path, map_location=device)
+        asvmodel.load_state_dict(asvmodel_ckpt['model_state_dict'])
+        asvmodel.to(device)
+        asvmodel.eval()
 
     while episode < cfg['MAX_EPISODE']:
-        filename = mfcc_list[episode % len(mfcc_list)][:-4]
-        state = np.expand_dims(np.load(mfcc_dir+mfcc_list[episode % len(mfcc_list)]), axis=0)
+        filename = mfcc_list[count_file % len(mfcc_list)][:-4]
+        state = np.expand_dims(np.load(mfcc_dir+mfcc_list[count_file % len(mfcc_list)]), axis=0)
         state = torch.from_numpy(state).to(device)
-        phase = np.load(phase_dir+mfcc_list[episode % len(mfcc_list)])
+        phase = np.load(phase_dir+mfcc_list[count_file % len(mfcc_list)])
         episode_reward = 0
         iteration = 0
 
@@ -74,7 +102,23 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
             action_noise.scale = (cfg['INIT_EXPSCALE'] - cfg['FINAL_EXPSCALE'])*max(0, cfg['EXPLORATION_END'] - episode)/cfg['EXPLORATION_END'] + cfg['FINAL_EXPSCALE']
             action_noise.reset()
 
-        print('Episode ', episode+1, filename)
+        print('Episode', episode+1, filename)
+        if torch.cuda.is_available():    
+            base_audio = mfcc_to_audio(cfg, state.squeeze().cpu().numpy(), phase)
+        else:
+            base_audio = mfcc_to_audio(cfg, state.squeeze().numpy(), phase)
+        if not np.all(np.isfinite(base_audio)):
+            base_audio = remove_inf(base_audio)
+
+        if oracle == 'GMM':
+            base_score = get_score_lfcc(cfg, ctime, base_audio, meng)
+        if oracle == 'ResNet':
+            base_score = get_score_resnet(cfg, base_audio, asvmodel)
+        if base_score > cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD']:
+            print('False accept case. Skip this one.')
+            count_file += 1
+            mfcc_list.remove(filename+'.npy')
+            continue
 
         while iteration < cfg['ITER_PER_UTT']:
             action = agent.select_action(state, action_noise)
@@ -85,21 +129,27 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
                 audio = mfcc_to_audio(cfg, next_state.cpu().numpy(), phase)
             else:
                 audio = mfcc_to_audio(cfg, next_state.numpy(), phase)
+            if not np.all(np.isfinite(audio)):
+                audio = remove_inf(audio)
 
-            # reward = get_reward_resnet(cfg, audio, asvmodel)
-            reward = get_reward_lfcc(cfg, ctime, audio, meng)
+            if oracle == 'GMM':
+                score = get_score_lfcc(cfg, ctime, audio, meng)
+            if oracle == 'ResNet':
+                score = get_score_resnet(cfg, audio, asvmodel)
+            reward = score - base_score
+            base_score = score
             
-            # sf.write(cfg['AUDIO_SAVE_DIR'], audio, cfg['SR'])
-            # reward = meng.get_reward(cfg['TOOLKIT_DIR'], cfg['AUDIO_SAVE_DIR'])            
             episode_reward += reward
-            mask = torch.Tensor([not (reward>cfg['THRESHOLD'])])
-            print('Reward ', iteration+1, reward)
+            mask = torch.Tensor([not (score>cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD'])])
+            print(iteration+1, 'Score', score, 'Reward', reward)
 
-            memory.push(state.squeeze(), action, mask, next_state, torch.Tensor([reward]))
+            if torch.cuda.is_available():
+                memory.push(state.squeeze().cpu(), action.cpu(), mask, next_state.cpu(), torch.Tensor([reward]))
+            else:
+                memory.push(state.squeeze(), action, mask, next_state, torch.Tensor([reward]))
 
-            if reward > cfg['THRESHOLD']:
-                if not os.path.exists(cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime)):
-                    os.system('mkdir -p '+cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime))
+            if score > cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD']:
+                interval_success += 1                
                 evading_audio_path = cfg['ROOT_DIR']+'evading_audio/{}/{}_{}.wav'.format(ctime, filename, str(episode//len(mfcc_list)))
                 sf.write(evading_audio_path, audio, cfg['SR'])
                 print('Succeed!!')
@@ -112,30 +162,57 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
                 transitions = memory.sample(cfg['ATK_BS'])
                 batch = Transition(*zip(*transitions))
                 value_loss, policy_loss = agent.update_parameters(batch)
-                if update % 1000 == 0:
+                if update % cfg['SAVE_INTERVAL'] == 0:
                     agent.save_model(ctime, update)
                 update += 1
                 print('Update {}: Value loss {}, Policy loss {}'.format(str(update), str(value_loss), str(policy_loss)))
         
         rewards.append(episode_reward)
-        print('Episode reward: {}, with {} iterations.'.format(str(episode_reward), str(iteration+1) if iteration<cfg['ITER_PER_UTT'] else 'N/A'))
+        per_action_rewards.append(episode_reward/(iteration+1))
+        print('Episode reward {}, with {} iterations.'.format(str(episode_reward), str(iteration+1) if iteration<cfg['ITER_PER_UTT'] else 'N/A'))
+        print('Reward per action {}.'.format(episode_reward/(iteration+1)))
+        fig, ax = plt.subplots()
+        ax.plot(per_action_rewards)
+        fig.savefig(cfg['ROOT_DIR']+'figures/per_action_rewards_{}.png'.format(ctime))
+        plt.close(fig)
         if episode > 19:
             print('Average episode reward: ', np.mean(rewards[-20:]))     
 
-        if episode % 100 == 0:
-            print('VALIDATION at episode ', episode+1)           
+        if episode % cfg['VAL_INTERVAL'] == 0:
+            print('VALIDATION at episode ', episode+1)
+            print('Interval success rate: {}/{}.'.format(str(interval_success), cfg['VAL_INTERVAL']))
+            interval_success = 0           
             random.shuffle(val_mfcc_list)
             val_number = 0
+            val_count_file = 0
+            average_val_reward = 0
+            val_success = 0
 
             while val_number < cfg['VAL_BS']:
-                val_filename = val_mfcc_list[val_number][:-4]
-                state = np.expand_dims(np.load(val_mfcc_dir+val_mfcc_list[val_number]), axis=0)
+                val_filename = val_mfcc_list[val_count_file][:-4]
+                state = np.expand_dims(np.load(val_mfcc_dir+val_mfcc_list[val_count_file]), axis=0)
                 state = torch.from_numpy(state).to(device)
-                phase = np.load(val_phase_dir+val_mfcc_list[val_number])
+                phase = np.load(val_phase_dir+val_mfcc_list[val_count_file])
                 episode_reward = 0
-                average_val_reward = 0
                 iteration = 0
-                print('Validation Number ', val_number+1, val_filename)
+
+                print('Validation Number', val_number+1, val_filename)
+                if torch.cuda.is_available():    
+                    base_audio = mfcc_to_audio(cfg, state.squeeze().cpu().numpy(), phase)
+                else:
+                    base_audio = mfcc_to_audio(cfg, state.squeeze().numpy(), phase)
+                if not np.all(np.isfinite(base_audio)):
+                    base_audio = remove_inf(base_audio)
+
+                if oracle == 'GMM':
+                    base_score = get_score_lfcc(cfg, ctime, base_audio, meng)
+                if oracle == 'ResNet':
+                    base_score = get_score_resnet(cfg, base_audio, asvmodel)
+                if base_score > cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD']:
+                    print('False accept case. Skip this one.')
+                    val_count_file += 1
+                    val_mfcc_list.remove(val_filename+'.npy')
+                    continue
 
                 while iteration < cfg['ITER_PER_UTT']:
                     action = agent.select_action(state)
@@ -145,17 +222,21 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
                         audio = mfcc_to_audio(cfg, next_state.cpu().numpy(), phase)
                     else:
                         audio = mfcc_to_audio(cfg, next_state.numpy(), phase)
+                    if not np.all(np.isfinite(audio)):
+                        audio = remove_inf(audio)
                     
-                    # reward = get_reward_resnet(cfg, audio, asvmodel)
-                    reward = get_reward_lfcc(cfg, ctime, audio, meng)
-                    print('Reward ', iteration+1, reward)
-                    # sf.write(cfg['AUDIO_SAVE_DIR'], audio, cfg['SR'])
-                    # reward = meng.get_reward(cfg['TOOLKIT_DIR'], cfg['AUDIO_SAVE_DIR'])
+                    if oracle == 'GMM':
+                        score = get_score_lfcc(cfg, ctime, audio, meng)
+                    if oracle == 'ResNet':
+                        score = get_score_resnet(cfg, audio, asvmodel)
+                    reward = score - base_score
+                    base_score = score
+                    
                     episode_reward += reward
+                    print(iteration+1, 'Score', score, 'Reward', reward)
 
-                    if reward > cfg['THRESHOLD']:
-                        if not os.path.exists(cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime)):
-                            os.system('mkdir -p '+cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime))
+                    if score > cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD']:
+                        val_success += 1
                         evading_audio_path = cfg['ROOT_DIR']+'evading_audio/{}/{}_{}.wav'.format(ctime, val_filename, str(episode))
                         sf.write(evading_audio_path, audio, cfg['SR'])
                         break
@@ -164,16 +245,26 @@ def train(cfg, ctime, load_actor_path=None, load_critic_path=None):
                     iteration += 1
 
                 val_number += 1
+                val_count_file += 1
                 average_val_reward += episode_reward
+                val_per_action_rewards.append(episode_reward/(iteration+1))
                 print('{}/{}. Episode reward: {}, with {} iterations.'.format(str(val_number), str(cfg['VAL_BS']), str(episode_reward), str(iteration+1) if iteration<cfg['ITER_PER_UTT'] else 'N/A'))
+                print('Reward per action {}.'.format(episode_reward/(iteration+1)))
+                fig, ax = plt.subplots()
+                ax.plot(val_per_action_rewards)
+                fig.savefig(cfg['ROOT_DIR']+'figures/val_per_action_rewards_{}.png'.format(ctime))
+                plt.close(fig)
 
             print('Average validation reward at episode {}: {}.'.format(str(episode+1), str(average_val_reward/cfg['VAL_BS'])))
+            print('Validation success rate: {}/{}.'.format(str(val_success), cfg['VAL_BS']))
                     
         episode += 1
+        count_file += 1
+    
+    if oracle == 'GMM':
+        meng.quit()
 
-    meng.quit()
-
-def evaluate(cfg, ctime, load_actor_path=None, load_critic_path=None):
+def evaluate(cfg, ctime, oracle='GMM', load_actor_path=None, load_critic_path=None, load_asvmodel_path=None):
     print(torch.cuda.is_available())
     feat_dir = cfg['DATA_DIR']+'features/logmel_attack/eval/'
     phase_dir = cfg['DATA_DIR']+'features/phase_attack/eval/'
@@ -181,22 +272,50 @@ def evaluate(cfg, ctime, load_actor_path=None, load_critic_path=None):
     feat_list = os.listdir(feat_dir)
     random.shuffle(feat_list)
 
+    if not os.path.exists(cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime)):
+        os.system('mkdir -p '+cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime))
+    if not os.path.exists(cfg['ROOT_DIR']+'temp_audio/'):
+        os.system('mkdir -p '+cfg['ROOT_DIR']+'temp_audio/')
+
     agent = DDPG(cfg)
+    agent.load_model(load_actor_path, load_critic_path)
     rewards = []
     count = 0
-
-    agent.load_model(load_actor_path, load_critic_path)
-    meng = matlab.engine.start_matlab()
+    count_file = 0
+    
+    if oracle == 'GMM':
+        meng = matlab.engine.start_matlab()
+    if oracle == 'ResNet':
+        asvmodel = MFCCModel()
+        asvmodel_ckpt = torch.load(load_asvmodel_path, map_location=device)
+        asvmodel.load_state_dict(asvmodel_ckpt['model_state_dict'])
+        asvmodel.to(device)
+        asvmodel.eval()
 
     while count < cfg['EVAL_NUM']:
-        filename = feat_list[count][:-4]
-        state = np.expand_dims(np.load(feat_dir+feat_list[count]), axis=0)
+        filename = feat_list[count_file][:-4]
+        state = np.expand_dims(np.load(feat_dir+feat_list[count_file]), axis=0)
         state = torch.from_numpy(state).to(device)
-        phase = np.load(phase_dir+feat_list[count])
+        phase = np.load(phase_dir+feat_list[count_file])
         episode_reward = 0
         iteration = 0
 
-        print('Evaluation ', count+1, filename)
+        print('Evaluation', count+1, filename)
+        if torch.cuda.is_available():    
+            base_audio = mfcc_to_audio(cfg, state.squeeze().cpu().numpy(), phase)
+        else:
+            base_audio = mfcc_to_audio(cfg, state.squeeze().numpy(), phase)
+        if not np.all(np.isfinite(base_audio)):
+            base_audio = remove_inf(base_audio)
+
+        if oracle == 'GMM': 
+            base_reward = get_score_lfcc(cfg, ctime, base_audio, meng, 'eval')
+        if oracle == 'ResNet':
+            base_reward = get_score_resnet(cfg, base_audio, asvmodel, 'eval')
+        if base_reward:
+            print('False accept case. Skip this one.')
+            count_file += 1
+            continue
 
         while iteration < cfg['EVAL_ITER_PER_UTT']:
             print(iteration+1, '/', cfg['EVAL_ITER_PER_UTT'])
@@ -208,13 +327,16 @@ def evaluate(cfg, ctime, load_actor_path=None, load_critic_path=None):
                 audio = mfcc_to_audio(cfg, next_state.cpu().numpy(), phase)
             else:
                 audio = mfcc_to_audio(cfg, next_state.numpy(), phase)
+            if not np.all(np.isfinite(audio)):
+                audio = remove_inf(audio)
 
-            reward = get_reward_lfcc(cfg, ctime, audio, meng, 'eval')            
+            if oracle == 'GMM':
+                reward = get_score_lfcc(cfg, ctime, audio, meng, 'eval')
+            if oracle == 'ResNet':
+                reward = get_score_resnet(cfg, audio, asvmodel, 'eval')            
             episode_reward += reward
 
             if reward:
-                if not os.path.exists(cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime)):
-                    os.system('mkdir -p '+cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime))
                 evading_audio_path = cfg['ROOT_DIR']+'evading_audio/{}/{}_{}.wav'.format(ctime, filename, 'ptb')
                 sf.write(evading_audio_path, audio, cfg['SR'])
                 print('Succeed!!')
@@ -227,6 +349,9 @@ def evaluate(cfg, ctime, load_actor_path=None, load_critic_path=None):
         print('Episode reward: {}, with {} iterations.'.format(str(episode_reward), str(iteration+1) if episode_reward else 'N/A'))
 
         count += 1
+        count_file += 1
+    
+    if oracle == 'GMM':
+        meng.quit()
 
-    meng.quit()
     print('Successful rate: {}/{}.'.format(sum(rewards), cfg['EVAL_NUM']))

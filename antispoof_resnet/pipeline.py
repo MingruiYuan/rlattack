@@ -27,7 +27,7 @@ def evaluate_accuracy(data_loader, model, criterion):
     n_total = len(data_loader)
     scores_bonafide = []
     scores_spoof = []
-    thres = np.linspace(-10,10,101) 
+    thres = np.linspace(-15,5,101) 
 
     model.eval()
     for i, dt in enumerate(data_loader):
@@ -101,7 +101,7 @@ def train(cfg, ctime, load_path=None):
     
     model = MFCCModel()
     if load_path is not None:
-        ckpt = torch.load(load_path)
+        ckpt = torch.load(load_path, map_location=device)
         model.load_state_dict(ckpt['model_state_dict'])
         epoch = ckpt['epoch']
         model.to(device)
@@ -174,17 +174,18 @@ def train(cfg, ctime, load_path=None):
 
         epoch += 1
 
-def evaluate(cfg):
+def evaluate(cfg, load_path):
     evalset = AntispoofingSet(cfg, 'eval')
     evalloader = DataLoader(evalset, batch_size=1, shuffle=False, num_workers=2, collate_fn=collate_dict)
     model = MFCCModel()
-    load_path = cfg['ROOT_DIR'] + 'saved_models/antispoof_resnet/20-01-16_08-03-57/resnet_mfcc_epoch_50.pth'
+    # load_path = cfg['ROOT_DIR'] + 'saved_models/antispoof_resnet/20-02-26_10-26-10/resnet_mfcc_epoch_300.pth'
     print('Model: ', load_path)
-    ckpt = torch.load(load_path)
+    ckpt = torch.load(load_path, map_location=device)
     model.load_state_dict(ckpt['model_state_dict'])
 
     scores_bonafide = []
     scores_spoof = []
+    model.to(device)
     model.eval()
 
     weight = torch.FloatTensor([1.0, 9.0]).to(device)
@@ -205,10 +206,10 @@ def evaluate(cfg):
 
     n_bonafide = len(scores_bonafide)
     n_spoof = len(scores_spoof)
-    print('{} bonafide samples, {} spoof samples.'.format(n_bonifide, n_spoof))
+    print('{} bonafide samples, {} spoof samples.'.format(n_bonafide, n_spoof))
     scores_bonafide = torch.Tensor(scores_bonafide)
     scores_spoof = torch.Tensor(scores_spoof)
-    thres = np.linspace(-10,10,101)
+    thres = np.linspace(-15,5,101)
     for i in range(len(thres)):
         FRR = (scores_bonafide<thres[i]).sum().float().item()/n_bonafide
         FAR = (scores_spoof>thres[i]).sum().float().item()/n_spoof

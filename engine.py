@@ -183,17 +183,17 @@ class DDPG(object):
         mu = mu.detach().squeeze()
 
         if action_noise is not None:
-            mu += torch.Tensor(action_noise.noise())
+            mu += torch.Tensor(action_noise.noise()).to(device)
 
-        # return mu.clamp(-1, 1)
-        return mu
+        return mu.clamp(-1, 1)
+        # return mu
 
     def update_parameters(self, batch):
-        state = torch.stack(batch.state, dim=0)
-        action = torch.stack(batch.action, dim=0)
-        reward = torch.stack(batch.reward, dim=0)
-        mask = torch.stack(batch.mask, dim=0)
-        next_state = torch.stack(batch.next_state, dim=0)
+        state = torch.stack(batch.state, dim=0).to(device)
+        action = torch.stack(batch.action, dim=0).to(device)
+        reward = torch.stack(batch.reward, dim=0).to(device)
+        mask = torch.stack(batch.mask, dim=0).to(device)
+        next_state = torch.stack(batch.next_state, dim=0).to(device)
 
         next_action = self.actor_tar(next_state)
         next_state_action_values = self.critic_tar(next_state, next_action)
@@ -226,11 +226,11 @@ class DDPG(object):
     def load_model(self, actor_path, critic_path):
         print('Loading models from {} and {}'.format(actor_path, critic_path))
         if actor_path is not None:
-            self.actor.load_state_dict(torch.load(actor_path))
+            self.actor.load_state_dict(torch.load(actor_path, map_location=device))
         else:
             self.actor.apply(init_weights)
         if critic_path is not None: 
-            self.critic.load_state_dict(torch.load(critic_path))
+            self.critic.load_state_dict(torch.load(critic_path, map_location=device))
         else:
             self.critic.apply(init_weights)
             
