@@ -12,6 +12,9 @@ from replay_memory import ReplayMemory, Transition
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# LFCC_THRESHOLD = 0.748917
+# CQCC_THRESHOLD = 1.252953
+
 def remove_inf(audio):  
     inf_pos = np.where(np.isfinite(audio)==False)[0]
     for p in inf_pos:
@@ -40,10 +43,10 @@ def get_score_resnet(cfg, audio, asvmodel, mode='train'):
     else:
         return score
 
-def get_score_lfcc(cfg, ctime, audio, meng, mode='train'):
+def get_score_gmm(cfg, ctime, audio, meng, mode='train'):
     filename = cfg['ROOT_DIR'] + 'temp_audio/temp_audio_{}.wav'.format(ctime)
     sf.write(filename, audio, cfg['SR'])
-    score = meng.get_score(cfg['TOOLKIT_DIR'], filename)
+    score = meng.get_score(cfg['TOOLKIT_DIR'], cfg['FT_TYPE'], filename)
     if mode == 'eval':
         print('Score', score)
         reward = score > cfg['THRESHOLD']
@@ -51,7 +54,7 @@ def get_score_lfcc(cfg, ctime, audio, meng, mode='train'):
     else:
         return score
         
-def train(cfg, ctime, oracle='GMM', load_actor_path=None, load_critic_path=None, load_asvmodel_path=None):
+def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_path=None, load_asvmodel_path=None):
     print(torch.cuda.is_available())
     mfcc_dir = cfg['DATA_DIR']+'features/logmel_attack/train/'
     phase_dir = cfg['DATA_DIR']+'features/phase_attack/train/'
@@ -59,6 +62,7 @@ def train(cfg, ctime, oracle='GMM', load_actor_path=None, load_critic_path=None,
     val_phase_dir = cfg['DATA_DIR']+'features/phase_attack/dev/'
     mfcc_extractor_attack(cfg, 'train')
     mfcc_list = os.listdir(mfcc_dir)
+    random.shuffle(mfcc_list)
     mfcc_extractor_attack(cfg, 'dev')
     val_mfcc_list = os.listdir(val_mfcc_dir)
 
@@ -108,10 +112,13 @@ def train(cfg, ctime, oracle='GMM', load_actor_path=None, load_critic_path=None,
         else:
             base_audio = mfcc_to_audio(cfg, state.squeeze().numpy(), phase)
         if not np.all(np.isfinite(base_audio)):
-            base_audio = remove_inf(base_audio)
+            print('Infinite value. Drop this one.')
+            count_file += 1
+            mfcc_list.remove(filename+'.npy')
+            continue
 
         if oracle == 'GMM':
-            base_score = get_score_lfcc(cfg, ctime, base_audio, meng)
+            base_score = get_score_gmm(cfg, ctime, base_audio, meng)
         if oracle == 'ResNet':
             base_score = get_score_resnet(cfg, base_audio, asvmodel)
         if base_score > cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD']:
@@ -130,25 +137,39 @@ def train(cfg, ctime, oracle='GMM', load_actor_path=None, load_critic_path=None,
             else:
                 audio = mfcc_to_audio(cfg, next_state.numpy(), phase)
             if not np.all(np.isfinite(audio)):
-                audio = remove_inf(audio)
+                print('Infinite value. Drop this one.')
+                break
 
             if oracle == 'GMM':
-                score = get_score_lfcc(cfg, ctime, audio, meng)
+                if LO:
+                    reward = get_score_gmm(cfg, ctime, audio, meng, 'eval')
+                else:
+                    score = get_score_gmm(cfg, ctime, audio, meng)
+                    reward = score - base_score
+                    base_score = score              
             if oracle == 'ResNet':
-                score = get_score_resnet(cfg, audio, asvmodel)
-            reward = score - base_score
-            base_score = score
+                if LO:
+                    reward = get_score_resnet(cfg, audio, asvmodel, 'eval')
+                else:
+                    score = get_score_resnet(cfg, audio, asvmodel)
+                    reward = score - base_score
+                    base_score = score
             
             episode_reward += reward
-            mask = torch.Tensor([not (score>cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD'])])
-            print(iteration+1, 'Score', score, 'Reward', reward)
+            if LO:
+                mask = torch.Tensor([not reward])
+                print(iteration+1, 'Reward', reward)
+            else:
+                mask = torch.Tensor([not (score>cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD'])])           
+                print(iteration+1, 'Score', score, 'Reward', reward)        
 
             if torch.cuda.is_available():
                 memory.push(state.squeeze().cpu(), action.cpu(), mask, next_state.cpu(), torch.Tensor([reward]))
             else:
                 memory.push(state.squeeze(), action, mask, next_state, torch.Tensor([reward]))
 
-            if score > cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD']:
+            success_flag = reward if LO else score > cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD']
+            if success_flag:
                 interval_success += 1                
                 evading_audio_path = cfg['ROOT_DIR']+'evading_audio/{}/{}_{}.wav'.format(ctime, filename, str(episode//len(mfcc_list)))
                 sf.write(evading_audio_path, audio, cfg['SR'])
@@ -202,10 +223,13 @@ def train(cfg, ctime, oracle='GMM', load_actor_path=None, load_critic_path=None,
                 else:
                     base_audio = mfcc_to_audio(cfg, state.squeeze().numpy(), phase)
                 if not np.all(np.isfinite(base_audio)):
-                    base_audio = remove_inf(base_audio)
+                    print('Infinite value. Drop this one.')
+                    val_count_file += 1
+                    val_mfcc_list.remove(val_filename+'.npy')
+                    continue
 
                 if oracle == 'GMM':
-                    base_score = get_score_lfcc(cfg, ctime, base_audio, meng)
+                    base_score = get_score_gmm(cfg, ctime, base_audio, meng)
                 if oracle == 'ResNet':
                     base_score = get_score_resnet(cfg, base_audio, asvmodel)
                 if base_score > cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD']:
@@ -223,10 +247,11 @@ def train(cfg, ctime, oracle='GMM', load_actor_path=None, load_critic_path=None,
                     else:
                         audio = mfcc_to_audio(cfg, next_state.numpy(), phase)
                     if not np.all(np.isfinite(audio)):
-                        audio = remove_inf(audio)
+                        print('Infinite value. Drop this one.')
+                        break
                     
                     if oracle == 'GMM':
-                        score = get_score_lfcc(cfg, ctime, audio, meng)
+                        score = get_score_gmm(cfg, ctime, audio, meng)
                     if oracle == 'ResNet':
                         score = get_score_resnet(cfg, audio, asvmodel)
                     reward = score - base_score
@@ -306,15 +331,19 @@ def evaluate(cfg, ctime, oracle='GMM', load_actor_path=None, load_critic_path=No
         else:
             base_audio = mfcc_to_audio(cfg, state.squeeze().numpy(), phase)
         if not np.all(np.isfinite(base_audio)):
-            base_audio = remove_inf(base_audio)
+            print('Infinite value. Drop this one.')
+            count_file += 1
+            feat_list.remove(filename+'.npy')
+            continue
 
         if oracle == 'GMM': 
-            base_reward = get_score_lfcc(cfg, ctime, base_audio, meng, 'eval')
+            base_reward = get_score_gmm(cfg, ctime, base_audio, meng, 'eval')
         if oracle == 'ResNet':
             base_reward = get_score_resnet(cfg, base_audio, asvmodel, 'eval')
         if base_reward:
             print('False accept case. Skip this one.')
             count_file += 1
+            feat_list.remove(filename+'.npy')
             continue
 
         while iteration < cfg['EVAL_ITER_PER_UTT']:
@@ -328,10 +357,11 @@ def evaluate(cfg, ctime, oracle='GMM', load_actor_path=None, load_critic_path=No
             else:
                 audio = mfcc_to_audio(cfg, next_state.numpy(), phase)
             if not np.all(np.isfinite(audio)):
-                audio = remove_inf(audio)
+                print('Infinite value. Drop this one.')
+                break
 
             if oracle == 'GMM':
-                reward = get_score_lfcc(cfg, ctime, audio, meng, 'eval')
+                reward = get_score_gmm(cfg, ctime, audio, meng, 'eval')
             if oracle == 'ResNet':
                 reward = get_score_resnet(cfg, audio, asvmodel, 'eval')            
             episode_reward += reward
@@ -347,6 +377,7 @@ def evaluate(cfg, ctime, oracle='GMM', load_actor_path=None, load_critic_path=No
 
         rewards.append(episode_reward)
         print('Episode reward: {}, with {} iterations.'.format(str(episode_reward), str(iteration+1) if episode_reward else 'N/A'))
+        print('Current successful rate: {}/{}'.format(sum(rewards), len(rewards)))
 
         count += 1
         count_file += 1

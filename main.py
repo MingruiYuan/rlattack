@@ -7,6 +7,7 @@ if __name__ == '__main__':
     ps.add_argument('-C', '--config', type=str, default=None)
     ps.add_argument('-T', '--current_time', type=str, required=True)
     ps.add_argument('-O', '--oracle', type=str, default='GMM')
+    ps.add_argument('--label_only', action='store_true')
     args = ps.parse_args()
 
     with open(args.config, 'r') as f:
@@ -30,9 +31,10 @@ if __name__ == '__main__':
 
     if args.step == 'train_attack':
         from pipeline import train as attack_train
-        attack_train(cfg, args.current_time, args.oracle, load_asvmodel_path=cfg['LOAD_ASVRESNET_PATH'])
+        # attack_train(cfg, args.current_time, args.oracle, args.label_only, load_asvmodel_path=cfg['LOAD_ASVRESNET_PATH'])
+        attack_train(cfg, args.current_time, args.oracle, args.label_only, cfg['LOAD_ACTOR_PATH'], cfg['LOAD_CRITIC_PATH'], cfg['LOAD_ASVRESNET_PATH'])
 
     if args.step == 'eval_attack':
         from pipeline import evaluate as attack_eval
-        attack_eval(cfg, args.current_time, cfg['LOAD_ACTOR_PATH'], cfg['LOAD_CRITIC_PATH'], args.oracle)
+        attack_eval(cfg, args.current_time, args.oracle, cfg['LOAD_ACTOR_PATH'], cfg['LOAD_CRITIC_PATH'], cfg['LOAD_ASVRESNET_PATH'])
         # attack_eval(cfg, args.current_time)
