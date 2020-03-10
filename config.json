@@ -44,8 +44,5 @@
     "LINLAYER_DIM": 8,
     "FT_TYPE": "CQCC",
     "THRESHOLD": 1.252953,
-    "DL_THRESHOLD": -7.6,
-    "LOAD_ACTOR_PATH": "/scratch/myuan7/program/rlattack/saved_models/attack/20-02-29_20-29-07/actor_upd17001.pt",
-    "LOAD_CRITIC_PATH": "/scratch/myuan7/program/rlattack/saved_models/attack/20-02-29_20-29-07/critic_upd17001.pt",
-    "LOAD_ASVRESNET_PATH": "/scratch/myuan7/program/rlattack/saved_models/antispoof_resnet/20-02-26_10-26-10/resnet_mfcc_epoch_271.pth"
+    "DL_THRESHOLD": -7.6
 }

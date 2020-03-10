@@ -56,15 +56,15 @@ def get_score_gmm(cfg, ctime, audio, meng, mode='train'):
         
 def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_path=None, load_asvmodel_path=None):
     print(torch.cuda.is_available())
-    mfcc_dir = cfg['DATA_DIR']+'features/logmel_attack/train/'
+    feat_dir = cfg['DATA_DIR']+'features/logmel_attack/train/'
     phase_dir = cfg['DATA_DIR']+'features/phase_attack/train/'
-    val_mfcc_dir = cfg['DATA_DIR']+'features/logmel_attack/dev/'
+    val_feat_dir = cfg['DATA_DIR']+'features/logmel_attack/dev/'
     val_phase_dir = cfg['DATA_DIR']+'features/phase_attack/dev/'
     mfcc_extractor_attack(cfg, 'train')
-    mfcc_list = os.listdir(mfcc_dir)
-    random.shuffle(mfcc_list)
+    feat_list = os.listdir(feat_dir)
+    random.shuffle(feat_list)
     mfcc_extractor_attack(cfg, 'dev')
-    val_mfcc_list = os.listdir(val_mfcc_dir)
+    val_feat_list = os.listdir(val_feat_dir)
 
     if not os.path.exists(cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime)):
         os.system('mkdir -p '+cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime))
@@ -78,6 +78,7 @@ def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_
     action_noise = ActionNoise(cfg['MEL_DIM'], cfg['FRAMES_PER_UTT']) if cfg['ACTION_NOISE'] else None
     memory = ReplayMemory(cfg['MEM_SIZE'])
     rewards = []
+    val_rewards = []
     per_action_rewards = []
     val_per_action_rewards = []
     episode = 0
@@ -95,10 +96,10 @@ def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_
         asvmodel.eval()
 
     while episode < cfg['MAX_EPISODE']:
-        filename = mfcc_list[count_file % len(mfcc_list)][:-4]
-        state = np.expand_dims(np.load(mfcc_dir+mfcc_list[count_file % len(mfcc_list)]), axis=0)
+        filename = feat_list[count_file % len(feat_list)][:-4]
+        state = np.expand_dims(np.load(feat_dir+feat_list[count_file % len(feat_list)]), axis=0)
         state = torch.from_numpy(state).to(device)
-        phase = np.load(phase_dir+mfcc_list[count_file % len(mfcc_list)])
+        phase = np.load(phase_dir+feat_list[count_file % len(feat_list)])
         episode_reward = 0
         iteration = 0
 
@@ -114,7 +115,7 @@ def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_
         if not np.all(np.isfinite(base_audio)):
             print('Infinite value. Drop this one.')
             count_file += 1
-            mfcc_list.remove(filename+'.npy')
+            feat_list.remove(filename+'.npy')
             continue
 
         if oracle == 'GMM':
@@ -124,7 +125,7 @@ def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_
         if base_score > cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD']:
             print('False accept case. Skip this one.')
             count_file += 1
-            mfcc_list.remove(filename+'.npy')
+            feat_list.remove(filename+'.npy')
             continue
 
         while iteration < cfg['ITER_PER_UTT']:
@@ -171,7 +172,7 @@ def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_
             success_flag = reward if LO else score > cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD']
             if success_flag:
                 interval_success += 1                
-                evading_audio_path = cfg['ROOT_DIR']+'evading_audio/{}/{}_{}.wav'.format(ctime, filename, str(episode//len(mfcc_list)))
+                evading_audio_path = cfg['ROOT_DIR']+'evading_audio/{}/{}_{}.wav'.format(ctime, filename, str(episode//len(feat_list)))
                 sf.write(evading_audio_path, audio, cfg['SR'])
                 print('Succeed!!')
                 break
@@ -196,6 +197,8 @@ def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_
         ax.plot(per_action_rewards)
         fig.savefig(cfg['ROOT_DIR']+'figures/per_action_rewards_{}.png'.format(ctime))
         plt.close(fig)
+        np.save(cfg['ROOT_DIR']+'figures/episode_rewards_{}.npy'.format(ctime), np.array(rewards))
+        np.save(cfg['ROOT_DIR']+'figures/per_action_rewards_{}.npy'.format(ctime), np.array(per_action_rewards))
         if episode > 19:
             print('Average episode reward: ', np.mean(rewards[-20:]))     
 
@@ -203,17 +206,17 @@ def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_
             print('VALIDATION at episode ', episode+1)
             print('Interval success rate: {}/{}.'.format(str(interval_success), cfg['VAL_INTERVAL']))
             interval_success = 0           
-            random.shuffle(val_mfcc_list)
+            random.shuffle(val_feat_list)
             val_number = 0
             val_count_file = 0
             average_val_reward = 0
             val_success = 0
 
             while val_number < cfg['VAL_BS']:
-                val_filename = val_mfcc_list[val_count_file][:-4]
-                state = np.expand_dims(np.load(val_mfcc_dir+val_mfcc_list[val_count_file]), axis=0)
+                val_filename = val_feat_list[val_count_file][:-4]
+                state = np.expand_dims(np.load(val_feat_dir+val_feat_list[val_count_file]), axis=0)
                 state = torch.from_numpy(state).to(device)
-                phase = np.load(val_phase_dir+val_mfcc_list[val_count_file])
+                phase = np.load(val_phase_dir+val_feat_list[val_count_file])
                 episode_reward = 0
                 iteration = 0
 
@@ -225,7 +228,7 @@ def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_
                 if not np.all(np.isfinite(base_audio)):
                     print('Infinite value. Drop this one.')
                     val_count_file += 1
-                    val_mfcc_list.remove(val_filename+'.npy')
+                    val_feat_list.remove(val_filename+'.npy')
                     continue
 
                 if oracle == 'GMM':
@@ -235,7 +238,7 @@ def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_
                 if base_score > cfg['THRESHOLD' if oracle == 'GMM' else 'DL_THRESHOLD']:
                     print('False accept case. Skip this one.')
                     val_count_file += 1
-                    val_mfcc_list.remove(val_filename+'.npy')
+                    val_feat_list.remove(val_filename+'.npy')
                     continue
 
                 while iteration < cfg['ITER_PER_UTT']:
@@ -272,6 +275,7 @@ def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_
                 val_number += 1
                 val_count_file += 1
                 average_val_reward += episode_reward
+                val_rewards.append(episode_reward)
                 val_per_action_rewards.append(episode_reward/(iteration+1))
                 print('{}/{}. Episode reward: {}, with {} iterations.'.format(str(val_number), str(cfg['VAL_BS']), str(episode_reward), str(iteration+1) if iteration<cfg['ITER_PER_UTT'] else 'N/A'))
                 print('Reward per action {}.'.format(episode_reward/(iteration+1)))
@@ -279,6 +283,8 @@ def train(cfg, ctime, oracle='GMM', LO=False, load_actor_path=None, load_critic_
                 ax.plot(val_per_action_rewards)
                 fig.savefig(cfg['ROOT_DIR']+'figures/val_per_action_rewards_{}.png'.format(ctime))
                 plt.close(fig)
+                np.save(cfg['ROOT_DIR']+'figures/val_episode_rewards_{}.npy'.format(ctime), np.array(val_rewards))
+                np.save(cfg['ROOT_DIR']+'figures/val_per_action_rewards_{}.npy'.format(ctime), np.array(val_per_action_rewards))
 
             print('Average validation reward at episode {}: {}.'.format(str(episode+1), str(average_val_reward/cfg['VAL_BS'])))
             print('Validation success rate: {}/{}.'.format(str(val_success), cfg['VAL_BS']))

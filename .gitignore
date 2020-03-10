@@ -4,3 +4,4 @@ fig/
 pipeline2.py
 *.log
 *.wav
+sub_*
