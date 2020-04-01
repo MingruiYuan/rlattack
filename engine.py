@@ -160,6 +160,7 @@ class DDPG(object):
     def __init__(self, cfg, ft):
 
         self.norm_scale = 1.0 if ft == 'LFCC' else 0.4
+        self.ft = ft
         self.actor = Actor(cfg['MEL_DIM'], cfg['AC_HIDDEN_DIM'], self.norm_scale)
         self.actor.to(device)
         self.actor_tar = Actor(cfg['MEL_DIM'], cfg['AC_HIDDEN_DIM'], self.norm_scale)
@@ -227,11 +228,11 @@ class DDPG(object):
         if actor_path is not None:
             self.actor.load_state_dict(torch.load(actor_path, map_location=device))
         else:
-            self.actor.apply(init_weights)
+            self.actor.load_state_dict(torch.load(self.cfg['ROOT_DIR']+'saved_models/initial_models/initial_actor_{}.pt'.format(self.ft), map_location=device))
         if critic_path is not None: 
             self.critic.load_state_dict(torch.load(critic_path, map_location=device))
         else:
-            self.critic.apply(init_weights)
+            self.actor.load_state_dict(torch.load(self.cfg['ROOT_DIR']+'saved_models/initial_models/initial_critic_{}.pt'.format(self.ft), map_location=device))
             
         hard_update(self.actor_tar, self.actor)  # Make sure target is with the same weight
         hard_update(self.critic_tar, self.critic)

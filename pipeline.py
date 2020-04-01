@@ -41,7 +41,7 @@ def train(cfg, ctime, feature_type, LO=False, load_actor_path=None, load_critic_
     if not os.path.exists(cfg['ROOT_DIR']+'temp_audio/'):
         os.system('mkdir -p '+cfg['ROOT_DIR']+'temp_audio/')
 
-    agent = DDPG(cfg)
+    agent = DDPG(cfg, feature_type)
     agent.load_model(load_actor_path, load_critic_path)
     action_noise = ActionNoise(cfg['MEL_DIM'], cfg['FRAMES_PER_UTT']) if cfg['ACTION_NOISE'] else None
     memory = ReplayMemory(cfg['MEM_SIZE'])
