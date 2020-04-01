@@ -86,7 +86,7 @@ def preprocess(cfg, mode):
         new_proto.write('{} {}\n'.format(file[:-4], indicator))
     new_proto.close()
 
-def mfcc_extractor_attack(cfg, mode):
+def feature_extractor_attack(cfg, mode):
     with open(cfg['DATA_DIR']+'ASVspoof2019_LA_cm_protocols/protocols_{}.txt'.format(mode), 'r') as f:
         protocols = f.readlines()
 
@@ -188,7 +188,7 @@ def mfcc_extractor_resnet(cfg, mode):
         np.save(cfg['DATA_DIR']+'features/mfcc_resnet/{}/{}.npy'.format(mode, info[0]), mfcc)
 
 
-def mfcc_to_audio(cfg, mel_spec, phs):
+def feature_to_audio(cfg, mel_spec, phs):
 
     # Load
     # mfcc_max = np.load()
@@ -205,14 +205,6 @@ def mfcc_to_audio(cfg, mel_spec, phs):
     j = 1j
     D = mag*np.cos(phs) + j*mag*np.sin(phs)
     audio = librosa.core.istft(stft_matrix=D, win_length=cfg['FFT_LEN'], hop_length=cfg['HOP_LEN'], window='hamming')
-    audio = signal.lfilter([1], [1, -cfg['PREEMPH']], audio)
-
-    return audio
-
-def mfcc_to_audio_2(cfg, mel_spec):
-
-    mag = librosa.feature.inverse.mel_to_stft(M=librosa.db_to_power(mel_spec), sr=cfg['SR'], n_fft=cfg['FFT_LEN'])
-    audio = librosa.core.griffinlim(S=np.sqrt(mag), n_iter=32, hop_length=cfg['HOP_LEN'], win_length=cfg['FFT_LEN'])
     audio = signal.lfilter([1], [1, -cfg['PREEMPH']], audio)
 
     return audio

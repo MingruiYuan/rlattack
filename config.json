@@ -2,7 +2,6 @@
     "ROOT_DIR": "/scratch/myuan7/program/rlattack/",
     "DATA_DIR": "/scratch/myuan7/corpus/LA/",
     "TOOLKIT_DIR": "/scratch/myuan7/program/ASVspoof_2019_baseline_CM_v1/",
-    "STATS_DIR": "/scratch/myuan7/corpus/LA/features/mfcc_attack_train_stats.npy",
 
     "FFT_LEN": 1024,
     "HOP_LEN": 256,
@@ -33,16 +32,13 @@
     "MEM_SIZE": 100000,
     "MAX_EPISODE": 100000,
     "ITER_PER_UTT": 20,
-    "EVAL_ITER_PER_UTT": 50,
+    "EVAL_ITER_PER_UTT": 20,
     "ATK_BS": 128,
     "SAVE_INTERVAL": 1000,
     "VAL_INTERVAL": 100,
     "VAL_BS": 16,
-    "EVAL_NUM": 300,
+    "EVAL_NUM": 3000,
     "CR_HIDDEN_DIM": 128,
     "AC_HIDDEN_DIM": 128,
     "LINLAYER_DIM": 8,
-    "FT_TYPE": "CQCC",
-    "THRESHOLD": 1.252953,
-    "DL_THRESHOLD": -7.6
 }

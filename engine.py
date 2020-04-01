@@ -88,9 +88,10 @@ class highwayDilationIncrement(nn.Module):
         return x
 
 class Actor(nn.Module):
-    def __init__(self, input_dim, hidden_dim):
+    def __init__(self, input_dim, hidden_dim, norm_scale):
         super(Actor, self).__init__()
         # Need an adversarial factor to constrain the L_inf norm of perturbation.
+        self.norm_scale = norm_scale
         self.conv1 = nn.Conv1d(in_channels=input_dim, out_channels=hidden_dim, kernel_size=1)
         self.ln1 = nn.LayerNorm(normalized_shape=hidden_dim)
         self.hci1 = highwayDilationIncrement(dimension=hidden_dim)
@@ -107,7 +108,7 @@ class Actor(nn.Module):
         x = self.hc(x)
         x = self.conv2(x)
         x = self.ln2(x.permute(0,2,1)).permute(0,2,1)
-        x = F.tanh(x)
+        x = self.norm_scale*F.tanh(x)
         return x
 
 class Critic(nn.Module):
@@ -156,13 +157,12 @@ class ActionNoise(object):
         return self.state * self.scale
 
 class DDPG(object):
-    def __init__(self, cfg):
+    def __init__(self, cfg, ft):
 
-        # self.stats = torch.Tensor(np.load(cfg['STATS_DIR'])[:,1:2])
-        # self.stats = self.stats/self.stats.max()
-        self.actor = Actor(cfg['MEL_DIM'], cfg['AC_HIDDEN_DIM'])
+        self.norm_scale = 1.0 if ft == 'LFCC' else 0.4
+        self.actor = Actor(cfg['MEL_DIM'], cfg['AC_HIDDEN_DIM'], self.norm_scale)
         self.actor.to(device)
-        self.actor_tar = Actor(cfg['MEL_DIM'], cfg['AC_HIDDEN_DIM'])
+        self.actor_tar = Actor(cfg['MEL_DIM'], cfg['AC_HIDDEN_DIM'], self.norm_scale)
         self.actor_tar.to(device)
         self.actor_opt = optim.Adam(self.actor.parameters(), lr=cfg['AC_LR'])
 
@@ -185,8 +185,7 @@ class DDPG(object):
         if action_noise is not None:
             mu += torch.Tensor(action_noise.noise()).to(device)
 
-        return mu.clamp(-1, 1)
-        # return mu
+        return mu.clamp(-self.norm_scale, self.norm_scale)
 
     def update_parameters(self, batch):
         state = torch.stack(batch.state, dim=0).to(device)

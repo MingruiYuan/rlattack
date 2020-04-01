@@ -32,4 +32,3 @@ end
 llk_genuine = mean(compute_llk(feat, genuineGMM_m, genuineGMM_s, genuineGMM_w));
 llk_spoof = mean(compute_llk(feat, spoofGMM_m, spoofGMM_s, spoofGMM_w));
 score = llk_genuine - llk_spoof;
-% reward = score > threshold;
