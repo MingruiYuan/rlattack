@@ -13,20 +13,20 @@ addpath(genpath(horzcat(toolkit_dir, 'tDCF_v1')));
 if strcmp(ft_type, 'LFCC')
 	[stat, delta, double_delta] = extract_lfcc(x, fs, 20, 512, 20);
     feat = [stat delta double_delta]';
-	load saved_models/gmm_lfcc/ggmm_mu.mat
-	load saved_models/gmm_lfcc/ggmm_sigma.mat
-	load saved_models/gmm_lfcc/ggmm_weight.mat
-	load saved_models/gmm_lfcc/sgmm_mu.mat
-	load saved_models/gmm_lfcc/sgmm_sigma.mat
-	load saved_models/gmm_lfcc/sgmm_weight.mat
+	load saved_models/gmm_antispoofing/ggmm_mu_lfcc.mat
+	load saved_models/gmm_antispoofing/ggmm_sigma_lfcc.mat
+	load saved_models/gmm_antispoofing/ggmm_weight_lfcc.mat
+	load saved_models/gmm_antispoofing/sgmm_mu_lfcc.mat
+	load saved_models/gmm_antispoofing/sgmm_sigma_lfcc.mat
+	load saved_models/gmm_antispoofing/sgmm_weight_lfcc.mat
 elseif strcmp(ft_type, 'CQCC')
 	feat = cqcc(x, fs, 96, fs/2, fs/2^10, 16, 29, 'ZsdD');
-	load saved_models/gmm_lfcc/ggmm_mu_cqcc.mat
-	load saved_models/gmm_lfcc/ggmm_sigma_cqcc.mat
-	load saved_models/gmm_lfcc/ggmm_weight_cqcc.mat
-	load saved_models/gmm_lfcc/sgmm_mu_cqcc.mat
-	load saved_models/gmm_lfcc/sgmm_sigma_cqcc.mat
-	load saved_models/gmm_lfcc/sgmm_weight_cqcc.mat
+	load saved_models/gmm_antispoofing/ggmm_mu_cqcc.mat
+	load saved_models/gmm_antispoofing/ggmm_sigma_cqcc.mat
+	load saved_models/gmm_antispoofing/ggmm_weight_cqcc.mat
+	load saved_models/gmm_antispoofing/sgmm_mu_cqcc.mat
+	load saved_models/gmm_antispoofing/sgmm_sigma_cqcc.mat
+	load saved_models/gmm_antispoofing/sgmm_weight_cqcc.mat
 end
 
 llk_genuine = mean(compute_llk(feat, genuineGMM_m, genuineGMM_s, genuineGMM_w));
