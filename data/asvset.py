@@ -44,6 +44,10 @@ def preprocess(cfg, mode):
     vad_data_dir = cfg['DATA_DIR'] + 'ASVspoof2019_LA_{}/vad/'.format(mode)
     if not os.path.exists(vad_data_dir):
         os.system('mkdir -p '+vad_data_dir)
+
+    if mode in ['dev', 'eval']:
+        os.system('rm -f {}*_A*'.format(data_dir))
+
     audio_list = os.listdir(data_dir)
 
     for i, file in enumerate(audio_list):

@@ -1,7 +1,7 @@
 {
     "ROOT_DIR": "/scratch/myuan7/program/rlattack/",
     "DATA_DIR": "/scratch/myuan7/corpus/LA/",
-    
+
     "FFT_LEN": 1024,
     "HOP_LEN": 256,
     "MEL_DIM": 80,
@@ -39,5 +39,5 @@
     "EVAL_NUM": 3000,
     "CR_HIDDEN_DIM": 128,
     "AC_HIDDEN_DIM": 128,
-    "LINLAYER_DIM": 8,
+    "LINLAYER_DIM": 8
 }
