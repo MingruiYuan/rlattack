@@ -14,7 +14,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def get_score_gmm(cfg, ctime, audio, meng, ft, mode='train', thres=0):
     filename = cfg['ROOT_DIR'] + 'temp_audio/temp_audio_{}.wav'.format(ctime)
     sf.write(filename, audio, cfg['SR'])
-    score = meng.get_score(cfg['TOOLKIT_DIR'], ft, filename)
+    score = meng.get_score(cfg['ROOT_DIR'], ft, filename)
     if mode == 'eval':
         print('Score', score)
         reward = score > thres

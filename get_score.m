@@ -1,12 +1,12 @@
-function score = get_score(toolkit_dir, ft_type, filepath)
+function score = get_score(root_dir, ft_type, filepath)
 
 clc;
 % add required libraries to the path
-addpath(genpath(horzcat(toolkit_dir, 'LFCC')));
-addpath(genpath(horzcat(toolkit_dir, 'CQCC_v1.0')));
-addpath(genpath(horzcat(toolkit_dir, 'GMM')));
-addpath(genpath(horzcat(toolkit_dir, 'bosaris_toolkit')));
-addpath(genpath(horzcat(toolkit_dir, 'tDCF_v1')));
+addpath(genpath(horzcat(root_dir, 'GMM_toolbox', 'LFCC')));
+addpath(genpath(horzcat(root_dir, 'GMM_toolbox', 'CQCC_v1.0')));
+addpath(genpath(horzcat(root_dir, 'GMM_toolbox', 'GMM')));
+addpath(genpath(horzcat(root_dir, 'GMM_toolbox', 'bosaris_toolkit')));
+addpath(genpath(horzcat(root_dir, 'GMM_toolbox', 'tDCF_v1')));
 
 [x,fs] = audioread(filepath);
 
