@@ -35,9 +35,7 @@ def train(cfg, ctime, feature_type, LO=False, load_actor_path=None, load_critic_
     val_feat_list = os.listdir(val_feat_dir)
 
     if not os.path.exists(cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime)):
-        os.system('mkdir -p '+cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime))
-    if not os.path.exists(cfg['ROOT_DIR']+'figures/'):
-        os.system('mkdir -p '+cfg['ROOT_DIR']+'figures/')
+        os.system('mkdir -p '+cfg['ROOT_DIR']+'evading_audio/{}/'.format(ctime))  
     if not os.path.exists(cfg['ROOT_DIR']+'temp_audio/'):
         os.system('mkdir -p '+cfg['ROOT_DIR']+'temp_audio/')
 
@@ -141,12 +139,7 @@ def train(cfg, ctime, feature_type, LO=False, load_actor_path=None, load_critic_
         per_action_rewards.append(episode_reward/(iteration+1))
         print('Episode reward {}, with {} iterations.'.format(str(episode_reward), str(iteration+1) if iteration<cfg['ITER_PER_UTT'] else 'N/A'))
         print('Reward per action {}.'.format(episode_reward/(iteration+1)))
-        fig, ax = plt.subplots()
-        ax.plot(per_action_rewards)
-        fig.savefig(cfg['ROOT_DIR']+'figures/per_action_rewards_{}.png'.format(ctime))
-        plt.close(fig)
-        np.save(cfg['ROOT_DIR']+'figures/episode_rewards_{}.npy'.format(ctime), np.array(rewards))
-        np.save(cfg['ROOT_DIR']+'figures/per_action_rewards_{}.npy'.format(ctime), np.array(per_action_rewards))
+
         if episode > 19:
             print('Average episode reward: ', np.mean(rewards[-20:]))     
 
@@ -213,13 +206,7 @@ def train(cfg, ctime, feature_type, LO=False, load_actor_path=None, load_critic_
                 val_per_action_rewards.append(episode_reward/(iteration+1))
                 print('{}/{}. Episode reward: {}, with {} iterations.'.format(str(val_number), str(cfg['VAL_BS']), str(episode_reward), str(iteration+1) if iteration<cfg['ITER_PER_UTT'] else 'N/A'))
                 print('Reward per action {}.'.format(episode_reward/(iteration+1)))
-                fig, ax = plt.subplots()
-                ax.plot(val_per_action_rewards)
-                fig.savefig(cfg['ROOT_DIR']+'figures/val_per_action_rewards_{}.png'.format(ctime))
-                plt.close(fig)
-                np.save(cfg['ROOT_DIR']+'figures/val_episode_rewards_{}.npy'.format(ctime), np.array(val_rewards))
-                np.save(cfg['ROOT_DIR']+'figures/val_per_action_rewards_{}.npy'.format(ctime), np.array(val_per_action_rewards))
-
+                
             print('Average validation reward at episode {}: {}.'.format(str(episode+1), str(average_val_reward/cfg['VAL_BS'])))
             print('Validation success rate: {}/{}.'.format(str(val_success), cfg['VAL_BS']))
                     
@@ -241,7 +228,7 @@ def evaluate(cfg, ctime, feature_type, load_actor_path=None, load_critic_path=No
     if not os.path.exists(cfg['ROOT_DIR']+'temp_audio/'):
         os.system('mkdir -p '+cfg['ROOT_DIR']+'temp_audio/')
 
-    agent = DDPG(cfg)
+    agent = DDPG(cfg, feature_type)
     agent.load_model(load_actor_path, load_critic_path)
     agent.save_model(ctime, 0)
     rewards = []
